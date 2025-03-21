@@ -1,0 +1,6 @@
+product_data.db
+core/__pycache__/database_manager.cpython-310.pyc
+workers/__pycache__/import_worker.cpython-310.pyc
+core/__pycache__
+ui/__pycache__
+workers/__pycache__
