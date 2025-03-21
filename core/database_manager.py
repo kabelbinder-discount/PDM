@@ -319,103 +319,110 @@ class DatabaseManager:
         self.close()
         return article_overrides, category_overrides
     
-    def export_products_csv(self, output_file, include_html=True):
-        """Export products to CSV format for shop import"""
-        self.connect()
+def export_products_csv(self, output_file, include_html=True):
+    """Export products to CSV format for shop import"""
+    self.connect()
+    
+    # Get all products
+    self.cursor.execute('SELECT article_id, name, price, stock, category FROM Products')
+    products = self.cursor.fetchall()
+    
+    # Create DataFrame for export
+    export_data = []
+    
+    for product in products:
+        article_id, name, price, stock, category = product
         
-        # Get all products
-        self.cursor.execute('SELECT article_id, name, price, stock, category FROM Products')
-        products = self.cursor.fetchall()
+        # Get properties for this product
+        self.cursor.execute(
+            'SELECT property_name, property_value, property_unit, language FROM Properties WHERE article_id = ?', 
+            (article_id,)
+        )
+        properties = self.cursor.fetchall()
         
-        # Create DataFrame for export
-        export_data = []
+        # Get overrides
+        article_overrides, category_overrides = self.get_property_overrides(article_id)
         
-        for product in products:
-            article_id, name, price, stock, category = product
-            
-            # Get properties for this product
-            self.cursor.execute(
-                'SELECT property_name, property_value, property_unit, language FROM Properties WHERE article_id = ?', 
-                (article_id,)
-            )
-            properties = self.cursor.fetchall()
-            
-            # Get overrides
-            article_overrides, category_overrides = self.get_property_overrides(article_id)
-            
-            # Organize properties by language
-            de_properties = {}
-            en_properties = {}
-            
-            # First add regular properties
-            for prop in properties:
-                prop_name, prop_value, prop_unit, lang = prop
-                if lang == 'de':
-                    if prop_unit:
-                        de_properties[prop_name] = f"{prop_value} {prop_unit}"
-                    else:
-                        de_properties[prop_name] = prop_value
-                elif lang == 'en':
-                    if prop_unit:
-                        en_properties[prop_name] = f"{prop_value} {prop_unit}"
-                    else:
-                        en_properties[prop_name] = prop_value
-            
-            # Apply category overrides
-            for prop_name, override_value, lang in category_overrides:
-                if lang == 'de' and prop_name in de_properties:
-                    de_properties[prop_name] = override_value
-                elif lang == 'en' and prop_name in en_properties:
-                    en_properties[prop_name] = override_value
-            
-            # Apply article-specific overrides (higher priority)
-            for prop_name, override_value, lang in article_overrides:
-                if lang == 'de':
-                    de_properties[prop_name] = override_value
-                elif lang == 'en':
-                    en_properties[prop_name] = override_value
-            
-            # Build HTML content if requested
-            p_desc_de = ""
-            p_desc_en = ""
-            
-            if include_html:
-                # Generate HTML table for German description
-                p_desc_de = "<table>"
-                for prop_name, prop_value in de_properties.items():
-                    p_desc_de += f"<tr><td>{prop_name}</td><td>{prop_value}</td></tr>"
-                p_desc_de += "</table>"
-                
-                # Generate HTML table for English description
-                p_desc_en = "<table>"
-                for prop_name, prop_value in en_properties.items():
-                    p_desc_en += f"<tr><td>{prop_name}</td><td>{prop_value}</td></tr>"
-                p_desc_en += "</table>"
-            
-            # Create row for this product
-            product_row = {
-                'article_id': article_id,
-                'name': name,
-                'price': price,
-                'stock': stock,
-                'category': category,
-                'p_desc.de': p_desc_de,
-                'p_desc.en': p_desc_en
-            }
-            
-            # Add individual properties
+        # Organize properties by language
+        de_properties = {}
+        en_properties = {}
+        
+        # First add regular properties
+        for prop in properties:
+            prop_name, prop_value, prop_unit, lang = prop
+            if lang == 'de':
+                if prop_unit:
+                    de_properties[prop_name] = f"{prop_value} {prop_unit}"
+                else:
+                    de_properties[prop_name] = prop_value
+            elif lang == 'en':
+                if prop_unit:
+                    en_properties[prop_name] = f"{prop_value} {prop_unit}"
+                else:
+                    en_properties[prop_name] = prop_value
+        
+        # Apply category overrides
+        for prop_name, override_value, lang in category_overrides:
+            if lang == 'de' and prop_name in de_properties:
+                de_properties[prop_name] = override_value
+            elif lang == 'en' and prop_name in en_properties:
+                en_properties[prop_name] = override_value
+        
+        # Apply article-specific overrides (higher priority)
+        for prop_name, override_value, lang in article_overrides:
+            if lang == 'de':
+                de_properties[prop_name] = override_value
+            elif lang == 'en':
+                en_properties[prop_name] = override_value
+        
+        # Build HTML content if requested
+        p_desc_de = ""
+        p_desc_en = ""
+        
+        if include_html:
+            # Generate HTML table for German description
+            p_desc_de = "<table>"
             for prop_name, prop_value in de_properties.items():
-                product_row[f"prop_{prop_name}"] = prop_value
-                
+                p_desc_de += f"<tr><td>{prop_name}</td><td>{prop_value}</td></tr>"
+            p_desc_de += "</table>"
+            
+            # Generate HTML table for English description
+            p_desc_en = "<table>"
             for prop_name, prop_value in en_properties.items():
-                product_row[f"prop_{prop_name}.en"] = prop_value
-                
-            export_data.append(product_row)
+                p_desc_en += f"<tr><td>{prop_name}</td><td>{prop_value}</td></tr>"
+            p_desc_en += "</table>"
         
-        self.close()
+        # Create row for this product - adding XTSOL as a constant column
+        product_row = {
+            'XTSOL': 'XTSOL',  # Adding the XTSOL column with constant value
+            'article_id': article_id,
+            'name': name,
+            'price': price,
+            'stock': stock,
+            'category': category,
+            'p_desc.de': p_desc_de,
+            'p_desc.en': p_desc_en
+        }
         
-        # Create DataFrame and export to CSV
-        df = pd.DataFrame(export_data)
-        df.to_csv(output_file, index=False, encoding='iso-8859-1', sep=';')
+        # Add individual properties
+        for prop_name, prop_value in de_properties.items():
+            product_row[f"prop_{prop_name}"] = prop_value
+            
+        for prop_name, prop_value in en_properties.items():
+            product_row[f"prop_{prop_name}.en"] = prop_value
+            
+        export_data.append(product_row)
+    
+    self.close()
+    
+    # Create DataFrame and export to CSV
+    df = pd.DataFrame(export_data)
+    
+    # Ensure XTSOL is the first column
+    if 'XTSOL' in df.columns:
+        cols = ['XTSOL'] + [col for col in df.columns if col != 'XTSOL']
+        df = df[cols]
         
-        return len(export_data)
+    df.to_csv(output_file, index=False, encoding='iso-8859-1', sep=';')
+    
+    return len(export_data)
